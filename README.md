@@ -24,4 +24,4 @@ Fresh contributions are always welcome. Simple instructions to proceed:
 Alternatively you may:
 
 1. Report a bug
-2. Ask for a feature request
+2. Ask for a feature request 
