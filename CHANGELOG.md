@@ -2,6 +2,17 @@
 
 ## Develop
 
+- Guard all optional functions with the conditional compilation depending on the user configuration
+
+## v1.3.1
+
+- Fire the on-press/on-release events as soon as the transition happen. Do not wait next process cycle.
+
+## v1.3.0
+
+- Implement getters and setters for the dynamic features
+- Implement the consistent use of `lwbtn_time_t` for all time functions and interfaces 
+
 ## v1.2.1
 
 - Fix the bug with `LWBTN_CFG_TYPE_VARTYPE` being wrongly named and replaced with `LWBTN_CFG_TIME_VARTYPE`

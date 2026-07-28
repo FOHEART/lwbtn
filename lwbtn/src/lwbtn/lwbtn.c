@@ -29,7 +29,7 @@
  * This file is part of LwBTN - Lightweight button manager.
  *
  * Author:          Tilen MAJERLE <tilen@majerle.eu>
- * Version:         v1.2.1
+ * Version:         v1.3.1
  */
 #include <string.h>
 #include "lwbtn/lwbtn.h"
@@ -141,8 +141,34 @@ prv_process_btn(lwbtn_t* lwobj, lwbtn_btn_t* btn, lwbtn_time_t mstime) {
         btn->time_state_change = mstime;
     }
 
-    /* Button is still pressed */
+#if !LWBTN_CFG_TIME_DEBOUNCE_PRESS_DYNAMIC && LWBTN_CFG_TIME_DEBOUNCE_PRESS > 0                                        \
+    && !LWBTN_CFG_TIME_DEBOUNCE_RELEASE_DYNAMIC && LWBTN_CFG_TIME_DEBOUNCE_RELEASE > 0
+    /*
+     * When the debounce (press or release) is in a static configuration, known at a compile time,
+     * and the debounce time for both is enabled, we know that if the state has just changed,
+     * then we will not process the on-press or on-release events.
+     * 
+     * Because of that, we can keep the `else` in the building structure,
+     * which will cause the system for an earlier return when the initial if statement fires (above)
+     * that checks if the state has changed
+     */
     else if (new_state) {
+#else
+    /* 
+     * When debounce is in dynamic mode (run-time configurable) or the static configuration 
+     * is configured as zero (no debouce), then:
+     * 
+     * - Dynamic: We don't know what is the runtime user config, so it may be we will have no debounce
+     * - Static: We know that user doesn't want debounce
+     * 
+     * When there is a possibility for disabled debounce, we want to immediately
+     * process the state change and not to wait next process function run.
+     * 
+     * In this case, we cannot use `else if`. The blocks shall be processed independently
+     */
+    if (new_state) {
+#endif
+
         /* 
          * Handle debounce and send on-press event
          *
@@ -198,7 +224,7 @@ prv_process_btn(lwbtn_t* lwobj, lwbtn_btn_t* btn, lwbtn_time_t mstime) {
         }
     }
 
-    /* Button is still released */
+    /* Button is (still) released */
     else {
         /*
          * We only need to react if on-press event has even been started.
@@ -344,6 +370,11 @@ lwbtn_init_ex(lwbtn_t* lwobj, lwbtn_btn_t* btns, uint16_t btns_cnt, lwbtn_get_st
 #if LWBTN_CFG_TIME_DEBOUNCE_RELEASE_DYNAMIC
         btns[i].time_debounce_release = LWBTN_CFG_TIME_DEBOUNCE_RELEASE;
 #endif /* LWBTN_CFG_TIME_DEBOUNCE_RELEASE_DYNAMIC */
+#if LWBTN_CFG_TIME_KEEPALIVE_PERIOD_DYNAMIC
+        btns[i].time_keepalive_period = LWBTN_CFG_TIME_KEEPALIVE_PERIOD;
+#endif /* LWBTN_CFG_TIME_KEEPALIVE_PERIOD_DYNAMIC */
+
+#if LWBTN_CFG_USE_CLICK || __DOXYGEN__
 #if LWBTN_CFG_TIME_CLICK_MIN_DYNAMIC
         btns[i].time_click_pressed_min = LWBTN_CFG_TIME_CLICK_MIN;
 #endif /* LWBTN_CFG_TIME_CLICK_MIN_DYNAMIC */
@@ -353,12 +384,10 @@ lwbtn_init_ex(lwbtn_t* lwobj, lwbtn_btn_t* btns, uint16_t btns_cnt, lwbtn_get_st
 #if LWBTN_CFG_TIME_CLICK_MULTI_MAX_DYNAMIC
         btns[i].time_click_multi_max = LWBTN_CFG_TIME_CLICK_MULTI_MAX;
 #endif /* LWBTN_CFG_TIME_CLICK_MULTI_MAX_DYNAMIC */
-#if LWBTN_CFG_TIME_KEEPALIVE_PERIOD_DYNAMIC
-        btns[i].time_keepalive_period = LWBTN_CFG_TIME_KEEPALIVE_PERIOD;
-#endif /* LWBTN_CFG_TIME_KEEPALIVE_PERIOD_DYNAMIC */
 #if LWBTN_CFG_CLICK_MAX_CONSECUTIVE_DYNAMIC
         btns[i].max_consecutive = LWBTN_CFG_CLICK_MAX_CONSECUTIVE;
 #endif /* LWBTN_CFG_CLICK_MAX_CONSECUTIVE_DYNAMIC */
+#endif /* LWBTN_CFG_USE_CLICK || __DOXYGEN__ */
     }
 
     return 1;
@@ -405,24 +434,26 @@ lwbtn_process_btn_ex(lwbtn_t* lwobj, lwbtn_btn_t* btn, lwbtn_time_t mstime) {
     return 0;
 }
 
+#if LWBTN_CFG_GET_STATE_MODE != LWBTN_GET_STATE_MODE_CALLBACK || __DOXYGEN__
+
 /**
  * \brief           Set button state to either "active" or "inactive".
+ *
+ * \note            Available only when \ref LWBTN_CFG_GET_STATE_MODE is NOT set to \ref LWBTN_GET_STATE_MODE_CALLBACK,
+ *                  which implies that user can use callback or direct (dynamic configuration) state set
+ *
  * \param[in]       btn: Button instance
  * \param[in]       state: New button state. `1` is for active (pressed), `0` is for inactive (released).
  * \return          `1` on success, `0` otherwise
  */
 uint8_t
 lwbtn_set_btn_state(lwbtn_btn_t* btn, uint8_t state) {
-#if LWBTN_CFG_GET_STATE_MODE != LWBTN_GET_STATE_MODE_CALLBACK
     btn->curr_state = state;
     btn->flags |= LWBTN_FLAG_MANUAL_STATE;
     return 1;
-#else  /* LWBTN_CFG_GET_STATE_MODE != LWBTN_GET_STATE_MODE_CALLBACK */
-    (void)btn;
-    (void)state;
-    return 0;
-#endif /* LWBTN_CFG_GET_STATE_MODE != LWBTN_GET_STATE_MODE_CALLBACK */
 }
+
+#endif /* LWBTN_CFG_GET_STATE_MODE != LWBTN_GET_STATE_MODE_CALLBACK || __DOXYGEN__ */
 
 /**
  * \brief           Check if button is active.
@@ -473,3 +504,281 @@ lwbtn_reset(lwbtn_t* lwobj, lwbtn_btn_t* btn) {
     }
     return 1;
 }
+
+/* Debounce configuration functions */
+
+/**
+ * \brief           Get debounce time for on-press detection, for specific button.
+ *                  This is the time in milliseconds to wait for a stable state after the button is pressed,
+ *                  before the on-press event is sent to the application.
+ * \param[in]       btn: Button instance to get debounce press time for
+ * \return          Debounce press time in `ms`
+ */
+lwbtn_time_t
+lwbtn_debounce_get_press_time(const lwbtn_btn_t* btn) {
+    (void)btn; /* May be unused */
+    return LWBTN_TIME_DEBOUNCE_PRESS_GET_MIN(btn);
+}
+
+#if LWBTN_CFG_TIME_DEBOUNCE_PRESS_DYNAMIC || __DOXYGEN__
+
+/**
+ * \brief           Set debounce time for on-press detection, for specific button
+ *
+ * \note            Available only when \ref LWBTN_CFG_TIME_DEBOUNCE_PRESS_DYNAMIC feature is enabled
+ *
+ * \param[in]       btn: Button instance to set debounce press time for
+ * \param[in]       time: New debounce press time in `ms`
+ * \return          `1` on success, `0` otherwise
+ */
+uint8_t
+lwbtn_debounce_set_press_time(lwbtn_btn_t* btn, lwbtn_time_t time) {
+    btn->time_debounce = time;
+    return 1;
+}
+
+#endif /* LWBTN_CFG_TIME_DEBOUNCE_PRESS_DYNAMIC || __DOXYGEN__ */
+
+/**
+ * \brief           Get debounce time for on-release detection, for specific button.
+ *                  This is the time in milliseconds to wait for a stable state after the button is released,
+ *                  before the on-release event is sent to the application.
+ * \param[in]       btn: Button instance to get debounce release time for
+ * \return          Debounce release time in `ms`
+ */
+lwbtn_time_t
+lwbtn_debounce_get_release_time(const lwbtn_btn_t* btn) {
+    (void)btn; /* May be unused */
+    return LWBTN_TIME_DEBOUNCE_RELEASE_GET_MIN(btn);
+}
+
+#if LWBTN_CFG_TIME_DEBOUNCE_RELEASE_DYNAMIC || __DOXYGEN__
+
+/**
+ * \brief           Set debounce time for on-release detection, for specific button
+ *
+ * \note            Available only when \ref LWBTN_CFG_TIME_DEBOUNCE_RELEASE_DYNAMIC feature is enabled
+ *
+ * \param[in]       btn: Button instance to set debounce release time for
+ * \param[in]       time: New debounce release time in `ms`
+ * \return          `1` on success, `0` otherwise
+ */
+uint8_t
+lwbtn_debounce_set_release_time(lwbtn_btn_t* btn, lwbtn_time_t time) {
+    btn->time_debounce_release = time;
+    return 1;
+}
+
+#endif /* LWBTN_CFG_TIME_DEBOUNCE_RELEASE_DYNAMIC || __DOXYGEN__ */
+
+#if LWBTN_CFG_USE_CLICK || __DOXYGEN__
+
+/**
+ * \brief           Get minimum pressed time for valid click event, for specific button
+ *
+ * \note            Available only when \ref LWBTN_CFG_USE_CLICK feature is enabled
+ *
+ * \param[in]       btn: Button instance to get minimum click time for
+ * \return          Minimum click time in `ms`
+ */
+lwbtn_time_t
+lwbtn_click_get_time_min(const lwbtn_btn_t* btn) {
+    (void)btn; /* May be unused */
+    return LWBTN_TIME_CLICK_GET_PRESSED_MIN(btn);
+}
+
+#if LWBTN_CFG_TIME_CLICK_MIN_DYNAMIC || __DOXYGEN__
+
+/**
+ * \brief           Set minimum pressed time for valid click event, for specific button
+ *
+ * \note            Available only when \ref LWBTN_CFG_USE_CLICK and
+ *                  \ref LWBTN_CFG_TIME_CLICK_MIN_DYNAMIC are both enabled
+ *
+ * \param[in]       btn: Button instance to set minimum click time for
+ * \param[in]       time: New minimum click time in `ms`
+ * \return          `1` on success, `0` otherwise
+ */
+uint8_t
+lwbtn_click_set_time_min(lwbtn_btn_t* btn, lwbtn_time_t time) {
+    btn->time_click_pressed_min = time;
+    return 1;
+}
+
+#endif /* LWBTN_CFG_TIME_CLICK_MIN_DYNAMIC || __DOXYGEN__ */
+
+/**
+ * \brief           Get maximum pressed time for valid click event, for specific button
+ *
+ * \note            Available only when \ref LWBTN_CFG_USE_CLICK feature is enabled
+ *
+ * \param[in]       btn: Button instance to get maximum click time for
+ * \return          Maximum click time in `ms`
+ */
+lwbtn_time_t
+lwbtn_click_get_time_max(const lwbtn_btn_t* btn) {
+    (void)btn; /* May be unused */
+    return LWBTN_TIME_CLICK_GET_PRESSED_MAX(btn);
+}
+
+#if LWBTN_CFG_TIME_CLICK_MAX_DYNAMIC || __DOXYGEN__
+
+/**
+ * \brief           Set maximum pressed time for valid click event, for specific button
+ *
+ * \note            Available only when \ref LWBTN_CFG_USE_CLICK and
+ *                  \ref LWBTN_CFG_TIME_CLICK_MAX_DYNAMIC are both enabled
+ *
+ * \param[in]       btn: Button instance to set maximum click time for
+ * \param[in]       time: New maximum click time in `ms`
+ * \return          `1` on success, `0` otherwise
+ */
+uint8_t
+lwbtn_click_set_time_max(lwbtn_btn_t* btn, lwbtn_time_t time) {
+    btn->time_click_pressed_max = time;
+    return 1;
+}
+
+#endif /* LWBTN_CFG_TIME_CLICK_MAX_DYNAMIC || __DOXYGEN__ */
+
+/**
+ * \brief           Get maximum time between `2` clicks to be considered consecutive, for specific button
+ *
+ * \note            Available only when \ref LWBTN_CFG_USE_CLICK feature is enabled
+ *
+ * \param[in]       btn: Button instance to get maximum multi-click time for
+ * \return          Maximum multi-click time in `ms`
+ */
+lwbtn_time_t
+lwbtn_click_get_time_multi_max(const lwbtn_btn_t* btn) {
+    (void)btn; /* May be unused */
+    return LWBTN_TIME_CLICK_MAX_MULTI(btn);
+}
+
+#if LWBTN_CFG_TIME_CLICK_MULTI_MAX_DYNAMIC || __DOXYGEN__
+
+/**
+ * \brief           Set maximum time between `2` clicks to be considered consecutive, for specific button
+ *
+ * \note            Available only when \ref LWBTN_CFG_USE_CLICK and
+ *                  \ref LWBTN_CFG_TIME_CLICK_MULTI_MAX_DYNAMIC are both enabled
+ *
+ * \param[in]       btn: Button instance to set maximum multi-click time for
+ * \param[in]       time: New maximum multi-click time in `ms`
+ * \return          `1` on success, `0` otherwise
+ */
+uint8_t
+lwbtn_click_set_time_multi_max(lwbtn_btn_t* btn, lwbtn_time_t time) {
+    btn->time_click_multi_max = time;
+    return 1;
+}
+
+#endif /* LWBTN_CFG_TIME_CLICK_MULTI_MAX_DYNAMIC || __DOXYGEN__ */
+
+/**
+ * \brief           Get max number of consecutive clicks, for specific button
+ *
+ * \note            Available only when \ref LWBTN_CFG_USE_CLICK feature is enabled
+ *
+ * \param[in]       btn: Button instance to get max number of consecutive clicks for
+ * \return          Max number of consecutive clicks
+ */
+uint8_t
+lwbtn_click_get_max_consecutive(const lwbtn_btn_t* btn) {
+    (void)btn; /* May be unused */
+    return LWBTN_CLICK_MAX_CONSECUTIVE(btn);
+}
+
+#if LWBTN_CFG_CLICK_MAX_CONSECUTIVE_DYNAMIC || __DOXYGEN__
+
+/**
+ * \brief           Set max number of consecutive clicks, for specific button
+ *
+ * \note            Available only when \ref LWBTN_CFG_USE_CLICK and
+ *                  \ref LWBTN_CFG_CLICK_MAX_CONSECUTIVE_DYNAMIC are both enabled
+ *
+ * \param[in]       btn: Button instance to set max number of consecutive clicks for
+ * \param[in]       max: New max number of consecutive clicks
+ * \return          `1` on success, `0` otherwise
+ */
+uint8_t
+lwbtn_click_set_max_consecutive(lwbtn_btn_t* btn, uint8_t max) {
+    btn->max_consecutive = max;
+    return 1;
+}
+
+#endif /* LWBTN_CFG_CLICK_MAX_CONSECUTIVE_DYNAMIC || __DOXYGEN__ */
+
+/**
+ * \brief           Get number of consecutive click events on a button since the last events.
+ *
+ *                  This function is useful in the application callback event function.
+ *
+ * \note            Available only when \ref LWBTN_CFG_USE_CLICK feature is enabled
+ *
+ * \param[in]       btn: Button instance to get number of clicks
+ * \return          Number of consecutive clicks on a button
+ */
+uint8_t
+lwbtn_click_get_count(const lwbtn_btn_t* btn) {
+    return btn->click.cnt;
+}
+
+#endif /* LWBTN_CFG_USE_CLICK || __DOXYGEN__ */
+
+#if LWBTN_CFG_USE_KEEPALIVE || __DOXYGEN__
+
+/* Keep alive configuration functions */
+
+/**
+ * \brief           Get keep alive period for specific button
+ *
+ * \note            Available only when \ref LWBTN_CFG_USE_KEEPALIVE feature is enabled
+ *
+ * \param[in]       btn: Button instance to get keep alive period for
+ * \return          Keep alive period in `ms`
+ */
+lwbtn_time_t
+lwbtn_keepalive_get_period(const lwbtn_btn_t* btn) {
+    (void)btn; /* May be unused */
+    return LWBTN_TIME_KEEPALIVE_PERIOD(btn);
+}
+
+#if LWBTN_CFG_TIME_KEEPALIVE_PERIOD_DYNAMIC || __DOXYGEN__
+
+/**
+ * \brief           Set keep alive period for specific button
+ *
+ * \note            Available only when \ref LWBTN_CFG_USE_KEEPALIVE and
+ *                  \ref LWBTN_CFG_TIME_KEEPALIVE_PERIOD_DYNAMIC are both enabled
+ *
+ * \param[in]       btn: Button instance to set keep alive period for
+ * \param[in]       period: New keep alive period in `ms`
+ * \return          `1` on success, `0` otherwise
+ */
+uint8_t
+lwbtn_keepalive_set_period(lwbtn_btn_t* btn, lwbtn_time_t period) {
+    btn->time_keepalive_period = period;
+    return 1;
+}
+
+#endif /* LWBTN_CFG_TIME_KEEPALIVE_PERIOD_DYNAMIC || __DOXYGEN__ */
+
+/**
+ * \brief           Get actual number of keep alive counts since the last on-press event.
+ *                  It is set to `0` if btn isn't pressed.
+ *
+ *                  This function is useful in the application callback event function.
+ * 
+ * \note            Available only when \ref LWBTN_CFG_USE_KEEPALIVE feature is enabled
+ *
+ * \param[in]       btn: Button instance to get keep alive count for
+ * \return          Number of keep alive events since on-press event
+ * \sa              lwbtn_keepalive_get_count_for_time
+ */
+uint16_t
+lwbtn_keepalive_get_count(const lwbtn_btn_t* btn) {
+    return btn->keepalive.cnt;
+}
+
+#endif /* LWBTN_CFG_USE_KEEPALIVE || __DOXYGEN__ */

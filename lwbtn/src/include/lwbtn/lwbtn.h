@@ -29,7 +29,7 @@
  * This file is part of LwBTN - Lightweight button manager.
  *
  * Author:          Tilen MAJERLE <tilen@majerle.eu>
- * Version:         v1.2.1
+ * Version:         v1.3.1
  */
 #ifndef LWBTN_HDR_H
 #define LWBTN_HDR_H
@@ -134,26 +134,29 @@ typedef struct lwbtn_btn {
     void* arg; /*!< User defined custom argument for callback function purpose */
 
 #if LWBTN_CFG_TIME_DEBOUNCE_PRESS_DYNAMIC || __DOXYGEN__
-    uint16_t time_debounce; /*!< Debounce time in milliseconds */
-#endif                      /* LWBTN_CFG_TIME_DEBOUNCE_PRESS_DYNAMIC || __DOXYGEN__ */
+    lwbtn_time_t time_debounce; /*!< Debounce time in milliseconds */
+#endif                          /* LWBTN_CFG_TIME_DEBOUNCE_PRESS_DYNAMIC || __DOXYGEN__ */
 #if LWBTN_CFG_TIME_DEBOUNCE_RELEASE_DYNAMIC || __DOXYGEN__
-    uint16_t time_debounce_release; /*!< Debounce time in milliseconds for release event  */
-#endif                              /* LWBTN_CFG_TIME_DEBOUNCE_RELEASE */
-#if LWBTN_CFG_TIME_CLICK_MIN_DYNAMIC || __DOXYGEN__
-    uint16_t time_click_pressed_min; /*!< Minimum pressed time for valid click event */
-#endif                               /* LWBTN_CFG_TIME_CLICK_MIN_DYNAMIC || __DOXYGEN__ */
-#if LWBTN_CFG_TIME_CLICK_MAX_DYNAMIC || __DOXYGEN__
-    uint16_t time_click_pressed_max; /*!< Maximum pressed time for valid click event*/
-#endif                               /* LWBTN_CFG_TIME_CLICK_MAX_DYNAMIC || __DOXYGEN__ */
-#if LWBTN_CFG_TIME_CLICK_MULTI_MAX_DYNAMIC || __DOXYGEN__
-    uint16_t time_click_multi_max; /*!< Maximum time between 2 clicks to be considered consecutive click */
-#endif                             /* LWBTN_CFG_TIME_CLICK_MULTI_MAX_DYNAMIC || __DOXYGEN__ */
+    lwbtn_time_t time_debounce_release; /*!< Debounce time in milliseconds for release event  */
+#endif                                  /* LWBTN_CFG_TIME_DEBOUNCE_RELEASE_DYNAMIC || __DOXYGEN__ */
 #if LWBTN_CFG_TIME_KEEPALIVE_PERIOD_DYNAMIC || __DOXYGEN__
-    uint16_t time_keepalive_period; /*!< Time in ms for periodic keep alive event */
-#endif                              /* LWBTN_CFG_TIME_KEEPALIVE_PERIOD_DYNAMIC || __DOXYGEN__ */
+    lwbtn_time_t time_keepalive_period; /*!< Time in ms for periodic keep alive event */
+#endif                                  /* LWBTN_CFG_TIME_KEEPALIVE_PERIOD_DYNAMIC || __DOXYGEN__ */
+
+#if LWBTN_CFG_USE_CLICK || __DOXYGEN__
+#if LWBTN_CFG_TIME_CLICK_MIN_DYNAMIC || __DOXYGEN__
+    lwbtn_time_t time_click_pressed_min; /*!< Minimum pressed time for valid click event */
+#endif                                   /* LWBTN_CFG_TIME_CLICK_MIN_DYNAMIC || __DOXYGEN__ */
+#if LWBTN_CFG_TIME_CLICK_MAX_DYNAMIC || __DOXYGEN__
+    lwbtn_time_t time_click_pressed_max; /*!< Maximum pressed time for valid click event*/
+#endif                                   /* LWBTN_CFG_TIME_CLICK_MAX_DYNAMIC || __DOXYGEN__ */
+#if LWBTN_CFG_TIME_CLICK_MULTI_MAX_DYNAMIC || __DOXYGEN__
+    lwbtn_time_t time_click_multi_max; /*!< Maximum time between 2 clicks to be considered consecutive click */
+#endif                                 /* LWBTN_CFG_TIME_CLICK_MULTI_MAX_DYNAMIC || __DOXYGEN__ */
 #if LWBTN_CFG_CLICK_MAX_CONSECUTIVE_DYNAMIC || __DOXYGEN__
-    uint16_t max_consecutive; /*!< Max number of consecutive clicks */
-#endif                        /* LWBTN_CFG_CLICK_MAX_CONSECUTIVE_DYNAMIC || __DOXYGEN__ */
+    uint8_t max_consecutive; /*!< Max number of consecutive clicks */
+#endif                       /* LWBTN_CFG_CLICK_MAX_CONSECUTIVE_DYNAMIC || __DOXYGEN__ */
+#endif                       /* LWBTN_CFG_USE_CLICK || __DOXYGEN__ */
 } lwbtn_btn_t;
 
 /**
@@ -168,13 +171,51 @@ typedef struct lwbtn {
 #endif                               /* LWBTN_CFG_GET_STATE_MODE != LWBTN_GET_STATE_MODE_MANUAL || __DOXYGEN__ */
 } lwbtn_t;
 
+/* Core functions */
 uint8_t lwbtn_init_ex(lwbtn_t* lwobj, lwbtn_btn_t* btns, uint16_t btns_cnt, lwbtn_get_state_fn get_state_fn,
                       lwbtn_evt_fn evt_fn);
 uint8_t lwbtn_process_ex(lwbtn_t* lwobj, lwbtn_time_t mstime);
 uint8_t lwbtn_process_btn_ex(lwbtn_t* lwobj, lwbtn_btn_t* btn, lwbtn_time_t mstime);
-uint8_t lwbtn_set_btn_state(lwbtn_btn_t* btn, uint8_t state);
-uint8_t lwbtn_is_btn_active(const lwbtn_btn_t* btn);
 uint8_t lwbtn_reset(lwbtn_t* lwobj, lwbtn_btn_t* btn);
+uint8_t lwbtn_is_btn_active(const lwbtn_btn_t* btn);
+
+/* State function */
+#if LWBTN_CFG_GET_STATE_MODE != LWBTN_GET_STATE_MODE_CALLBACK || __DOXYGEN__
+uint8_t lwbtn_set_btn_state(lwbtn_btn_t* btn, uint8_t state);
+#endif /* LWBTN_CFG_GET_STATE_MODE != LWBTN_GET_STATE_MODE_CALLBACK || __DOXYGEN__ */
+
+/* Debounce configuration functions */
+lwbtn_time_t lwbtn_debounce_get_press_time(const lwbtn_btn_t* btn);
+lwbtn_time_t lwbtn_debounce_get_release_time(const lwbtn_btn_t* btn);
+#if LWBTN_CFG_TIME_DEBOUNCE_PRESS_DYNAMIC || __DOXYGEN__
+uint8_t lwbtn_debounce_set_press_time(lwbtn_btn_t* btn, lwbtn_time_t time);
+#endif /* LWBTN_CFG_TIME_DEBOUNCE_PRESS_DYNAMIC || __DOXYGEN__ */
+#if LWBTN_CFG_TIME_DEBOUNCE_RELEASE_DYNAMIC || __DOXYGEN__
+uint8_t lwbtn_debounce_set_release_time(lwbtn_btn_t* btn, lwbtn_time_t time);
+#endif /* LWBTN_CFG_TIME_DEBOUNCE_RELEASE_DYNAMIC || __DOXYGEN__ */
+
+#if LWBTN_CFG_USE_CLICK || __DOXYGEN__
+
+/* Click configuration functions */
+lwbtn_time_t lwbtn_click_get_time_min(const lwbtn_btn_t* btn);
+lwbtn_time_t lwbtn_click_get_time_max(const lwbtn_btn_t* btn);
+lwbtn_time_t lwbtn_click_get_time_multi_max(const lwbtn_btn_t* btn);
+uint8_t lwbtn_click_get_max_consecutive(const lwbtn_btn_t* btn);
+#if LWBTN_CFG_TIME_CLICK_MIN_DYNAMIC || __DOXYGEN__
+uint8_t lwbtn_click_set_time_min(lwbtn_btn_t* btn, lwbtn_time_t time);
+#endif /* LWBTN_CFG_TIME_CLICK_MIN_DYNAMIC || __DOXYGEN__ */
+#if LWBTN_CFG_TIME_CLICK_MAX_DYNAMIC || __DOXYGEN__
+uint8_t lwbtn_click_set_time_max(lwbtn_btn_t* btn, lwbtn_time_t time);
+#endif /* LWBTN_CFG_TIME_CLICK_MAX_DYNAMIC || __DOXYGEN__ */
+#if LWBTN_CFG_TIME_CLICK_MULTI_MAX_DYNAMIC || __DOXYGEN__
+uint8_t lwbtn_click_set_time_multi_max(lwbtn_btn_t* btn, lwbtn_time_t time);
+#endif /* LWBTN_CFG_TIME_CLICK_MULTI_MAX_DYNAMIC || __DOXYGEN__ */
+#if LWBTN_CFG_CLICK_MAX_CONSECUTIVE_DYNAMIC || __DOXYGEN__
+uint8_t lwbtn_click_set_max_consecutive(lwbtn_btn_t* btn, uint8_t max);
+#endif /* LWBTN_CFG_CLICK_MAX_CONSECUTIVE_DYNAMIC || __DOXYGEN__ */
+uint8_t lwbtn_click_get_count(const lwbtn_btn_t* btn);
+
+#endif /* LWBTN_CFG_USE_CLICK || __DOXYGEN__ */
 
 /**
  * \brief           Initialize LwBTN library with buttons on default button group
@@ -203,41 +244,27 @@ uint8_t lwbtn_reset(lwbtn_t* lwobj, lwbtn_btn_t* btn);
  */
 #define lwbtn_process_btn(btn, mstime)                   lwbtn_process_btn_ex(NULL, (btn), (mstime))
 
+/* Keep alive functions */
 #if LWBTN_CFG_USE_KEEPALIVE || __DOXYGEN__
+
+lwbtn_time_t lwbtn_keepalive_get_period(const lwbtn_btn_t* btn);
 #if LWBTN_CFG_TIME_KEEPALIVE_PERIOD_DYNAMIC || __DOXYGEN__
-
-/**
- * \brief           Get keep alive period for specific button
- * \param[in]       btn: Button instance to get keep alive period for
- * \return          Keep alive period in `ms`
- */
-#define lwbtn_keepalive_get_period(btn) ((btn)->time_keepalive_period)
-
-#else
-/* Default config */
-#define lwbtn_keepalive_get_period(btn) (LWBTN_CFG_TIME_KEEPALIVE_PERIOD)
+uint8_t lwbtn_keepalive_set_period(lwbtn_btn_t* btn, lwbtn_time_t period);
 #endif /* LWBTN_CFG_TIME_KEEPALIVE_PERIOD_DYNAMIC || __DOXYGEN__ */
-
-/**
- * \brief           Get actual number of keep alive counts since the last on-press event.
- *                  It is set to `0` if btn isn't pressed
- * \param[in]       btn: Button instance to get keep alive period for
- * \return          Number of keep alive events since on-press event
- * \sa              lwbtn_keepalive_get_count_for_time
- */
-#define lwbtn_keepalive_get_count(btn)                   ((btn)->keepalive.cnt)
+uint16_t lwbtn_keepalive_get_count(const lwbtn_btn_t* btn);
 
 /**
  * \brief           Get number of keep alive counts for specific required time in milliseconds.
  *                  It will calculate number of keepalive ticks specific button shall make,
  *                  before requested time is reached.
- * 
+ *
  * Result of the function can be used with \ref lwbtn_keepalive_get_count which returns
  * actual number of keep alive counts since last on-press event of the button.
- * 
+ *
+ * \note            Available only when \ref LWBTN_CFG_USE_KEEPALIVE feature is enabled
  * \note            Value is always integer aligned, with granularity of one keepalive time period
- * \note            Implemented as macro, as it may be optimized by compiler when static keep alive is used
- * 
+ * \note            Implemented as macro to avoid the function-call overhead for a simple derived calculation
+ *
  * \param[in]       btn: Button to use for check
  * \param[in]       ms_time: Time in ms to calculate number of keep alive counts
  * \return          Number of keep alive counts
@@ -246,13 +273,6 @@ uint8_t lwbtn_reset(lwbtn_t* lwobj, lwbtn_btn_t* btn);
 #define lwbtn_keepalive_get_count_for_time(btn, ms_time) ((ms_time) / lwbtn_keepalive_get_period(btn))
 
 #endif /* LWBTN_CFG_USE_KEEPALIVE || __DOXYGEN__ */
-
-/**
- * \brief           Get number of consecutive click events on a button
- * \param[in]       btn: Button instance to get number of clicks
- * \return          Number of consecutive clicks on a button
- */
-#define lwbtn_click_get_count(btn) ((btn)->click.cnt)
 
 /**
  * \}
