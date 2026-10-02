@@ -19,6 +19,17 @@ It debounces raw pin state changes and turns them into click, multi-click and ke
 * Easy to use and maintain
 * User friendly MIT license
 
+## Porting guides
+
+Step-by-step guides for integrating lwbtn into specific MCU projects are collected in the [add_to_main_codespace](./add_to_main_codespace) folder, one sub-folder per MCU family:
+
+| MCU family | Guide | Description |
+|------------|-------|-------------|
+| AT32 | [AT32_PortGuide.md](./add_to_main_codespace/at32/AT32_PortGuide.md) | Porting lwbtn to AT32F435 (ARM Cortex-M4F) with a portable layer, callback mode and periodic processing from the main loop |
+| STM32 | *planned* | Guide will be added following the same structure |
+
+Each guide documents the reference setup, the portable layer (`lwbtn_portable.c` / `lwbtn_portable.h`) and the pitfalls to watch out for, so new ports can follow an existing template.
+
 ## Contribute
 
 Fresh contributions are always welcome. Simple instructions to proceed:

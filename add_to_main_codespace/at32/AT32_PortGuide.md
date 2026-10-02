@@ -408,7 +408,7 @@ To use custom settings without modifying library files, either:
 
 ## See Also
 
-- [README.md](./README.md) — brief project description
+- [README.md](../../README.md) — brief project description
 - `lwbtn/lwbtn/src/include/lwbtn/lwbtn.h` — public API header
 - `lwbtn/lwbtn/src/include/lwbtn/lwbtn_opt.h` — configuration options
 - `project/usersrc/lwbtn_portable.c` — reference portable layer implementation
