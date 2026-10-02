@@ -26,9 +26,9 @@ Step-by-step guides for integrating lwbtn into specific MCU projects are collect
 | MCU family | Guide | Description |
 |------------|-------|-------------|
 | AT32 | [AT32_PortGuide.md](./add_to_main_codespace/at32/AT32_PortGuide.md) | Porting lwbtn to AT32F435 (ARM Cortex-M4F) with a portable layer, callback mode and periodic processing from the main loop |
-| STM32 | *planned* | Guide will be added following the same structure |
+| STM32 | [STM32_PortGuide.md](./add_to_main_codespace/stm32h5/STM32_PortGuide.md) | Porting lwbtn to STM32 (HAL) with a portable layer, BSP user button, callback mode and periodic processing from the main loop |
 
-Each guide documents the reference setup, the portable layer (`lwbtn_portable.c` / `lwbtn_portable.h`) and the pitfalls to watch out for, so new ports can follow an existing template.
+Each guide documents the reference setup, the portable layer (`lwbtn_portable.c` / `lwbtn_portable.h` on AT32, `lwbtn_port.c` / `lwbtn_port.h` on STM32) and the pitfalls to watch out for, so new ports can follow an existing template.
 
 ## Contribute
 
