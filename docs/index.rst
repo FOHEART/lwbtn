@@ -3,6 +3,9 @@ LwBTN |version| documentation
 
 Welcome to the documentation for version |version|.
 
+LwBTN is a lightweight, platform independent library for button and input-pin management in embedded systems.
+It debounces raw pin state changes and turns them into click, multi-click and keep-alive (long-press) events, delivered through a single application callback.
+
 .. image:: static/images/logo.svg
     :align: center
 
@@ -14,12 +17,15 @@ Welcome to the documentation for version |version|.
 Features
 ^^^^^^^^
 
-* Written in C (C11)
+* Written in C (C11), compatible with ``stdint.h`` data types
 * Platform independent, requires user to provide millisecond timing source
 * No dynamic memory allocation
-* Callback driven event management
-* Support for click, multi click and long press events
+* Callback-driven event management
+* Support for click, multi-click and keep-alive (long press) events
 * Support for software debounce for press and release events
+* Runtime configurable debounce, click and keep-alive timing, per button
+* Selectable button state acquisition: callback, manual or hybrid mode
+* Support for multiple independent button-group instances
 * Easy to use and maintain
 * User friendly MIT license
 

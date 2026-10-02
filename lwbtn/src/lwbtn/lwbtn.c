@@ -4,7 +4,7 @@
  */
 
 /*
- * Copyright (c) 2024 Tilen MAJERLE
+ * Copyright (c) 2026 Tilen MAJERLE
  *
  * Permission is hereby granted, free of charge, to any person
  * obtaining a copy of this software and associated documentation
@@ -29,7 +29,7 @@
  * This file is part of LwBTN - Lightweight button manager.
  *
  * Author:          Tilen MAJERLE <tilen@majerle.eu>
- * Version:         v1.3.1
+ * Version:         v1.3.2
  */
 #include <string.h>
 #include "lwbtn/lwbtn.h"
@@ -38,13 +38,12 @@
 #error "Invalid LWBTN_GET_STATE_MODE_CALLBACK configuration"
 #endif
 
-#define LWBTN_FLAG_ONPRESS_SENT ((uint16_t)0x0001) /*!< Flag indicates that on-press event has been sent */
-#define LWBTN_FLAG_MANUAL_STATE                                                                                        \
-    ((uint16_t)0x0002) /*!< Flag indicates that user wants to manually set button state.
-                                                    Do not call "get_state" function */
-#define LWBTN_FLAG_FIRST_INACTIVE_RCVD                                                                                 \
-    ((uint16_t)0x0004)                      /*!< We are waiting for first inactive state before we continue further */
-#define LWBTN_FLAG_RESET ((uint16_t)0x0008) /*!< Reset called on the button */
+#define LWBTN_FLAG_MANUAL_STATE        ((uint16_t)0x0001) /*!< Manually set the state of the button */
+#define LWBTN_FLAG_ONPRESS_SENT        ((uint16_t)0x0002) /*!< Flag indicates that on-press event has been sent */
+#define LWBTN_FLAG_FIRST_INACTIVE_RCVD ((uint16_t)0x0004) /*!< First inactive received flag */
+
+/* Flags to clear on reset event */
+#define LWBTN_FLAGS_CLEAR_ON_RESET     ((uint16_t)(LWBTN_FLAG_FIRST_INACTIVE_RCVD | LWBTN_FLAG_ONPRESS_SENT))
 
 #if LWBTN_CFG_TIME_DEBOUNCE_PRESS_DYNAMIC
 #define LWBTN_TIME_DEBOUNCE_PRESS_GET_MIN(btn) ((lwbtn_time_t)((btn)->time_debounce))
@@ -101,8 +100,21 @@ static lwbtn_t lwbtn_default;
 #define LWBTN_GET_LWOBJ(in_lwobj) ((in_lwobj) != NULL ? (in_lwobj) : (&lwbtn_default))
 
 /**
+ * \brief           Reset the active button states information
+ *
+ * \param           btn: Button object
+ */
+static void
+prv_reset_btn(lwbtn_btn_t* btn) {
+    btn->flags &= ~LWBTN_FLAGS_CLEAR_ON_RESET;
+#if LWBTN_CFG_USE_CLICK
+    btn->click.cnt = 0;
+#endif /* LWBTN_CFG_USE_CLICK */
+}
+
+/**
  * \brief           Process the button information and state
- * 
+ *
  * \param[in]       lwobj: LwBTN instance. Set to `NULL` to use default one
  * \param[in]       btn: Button instance to process
  * \param[in]       mstime: Current milliseconds system time
@@ -114,16 +126,16 @@ prv_process_btn(lwbtn_t* lwobj, lwbtn_btn_t* btn, lwbtn_time_t mstime) {
     /* Get button state */
     new_state = LWBTN_BTN_GET_STATE(lwobj, btn);
 
-    /* 
+    /*
      * First state must be "inactive" before
      * any further button state is being processed.
-     * 
+     *
      * This is to prevent initial detected state on hardware errors,
      * or when button is kept pressed after the system/lib reset.
-     * 
+     *
      * When user uses manual state set (no callback system),
      * it is up to user to first call "set state" function and set state to inactive
-     * 
+     *
      * This features is also used for "button reset"
      */
     if (!(btn->flags & LWBTN_FLAG_FIRST_INACTIVE_RCVD)) {
@@ -131,9 +143,9 @@ prv_process_btn(lwbtn_t* lwobj, lwbtn_btn_t* btn, lwbtn_time_t mstime) {
             return;
         }
 
-        /* Reset all states */
+        /* Reset all states, but keep the manual-state selection (if any) intact */
         btn->last_state = 0;
-        btn->flags = LWBTN_FLAG_FIRST_INACTIVE_RCVD;
+        btn->flags = (btn->flags & LWBTN_FLAG_MANUAL_STATE) | LWBTN_FLAG_FIRST_INACTIVE_RCVD;
     }
 
     /* Button state has just changed */
@@ -147,29 +159,29 @@ prv_process_btn(lwbtn_t* lwobj, lwbtn_btn_t* btn, lwbtn_time_t mstime) {
      * When the debounce (press or release) is in a static configuration, known at a compile time,
      * and the debounce time for both is enabled, we know that if the state has just changed,
      * then we will not process the on-press or on-release events.
-     * 
+     *
      * Because of that, we can keep the `else` in the building structure,
      * which will cause the system for an earlier return when the initial if statement fires (above)
      * that checks if the state has changed
      */
     else if (new_state) {
 #else
-    /* 
-     * When debounce is in dynamic mode (run-time configurable) or the static configuration 
+    /*
+     * When debounce is in dynamic mode (run-time configurable) or the static configuration
      * is configured as zero (no debouce), then:
-     * 
+     *
      * - Dynamic: We don't know what is the runtime user config, so it may be we will have no debounce
      * - Static: We know that user doesn't want debounce
-     * 
+     *
      * When there is a possibility for disabled debounce, we want to immediately
      * process the state change and not to wait next process function run.
-     * 
+     *
      * In this case, we cannot use `else if`. The blocks shall be processed independently
      */
     if (new_state) {
 #endif
 
-        /* 
+        /*
          * Handle debounce and send on-press event
          *
          * This is when we detect valid press
@@ -212,10 +224,13 @@ prv_process_btn(lwbtn_t* lwobj, lwbtn_btn_t* btn, lwbtn_time_t mstime) {
         } else {
             /*
              * Handle keep alive, but only if on-press event has been sent
+             * Keep alive is sent when valid press is being detected.
              *
-             * Keep alive is sent when valid press is being detected
+             * Period is checked to be greater than 0 as part of the loop condition itself,
+             * to prevent infinite loop situation when period is (dynamically, when enabled) set to 0
              */
-            while ((lwbtn_time_t)(mstime - btn->keepalive.last_time) >= LWBTN_TIME_KEEPALIVE_PERIOD(btn)) {
+            while (LWBTN_TIME_KEEPALIVE_PERIOD(btn) > 0
+                   && (lwbtn_time_t)(mstime - btn->keepalive.last_time) >= LWBTN_TIME_KEEPALIVE_PERIOD(btn)) {
                 btn->keepalive.last_time += LWBTN_TIME_KEEPALIVE_PERIOD(btn);
                 ++btn->keepalive.cnt;
                 lwobj->evt_fn(lwobj, btn, LWBTN_EVT_KEEPALIVE);
@@ -239,7 +254,7 @@ prv_process_btn(lwbtn_t* lwobj, lwbtn_btn_t* btn, lwbtn_time_t mstime) {
              * - Config debounce time for release is more than `0`
              */
 #if LWBTN_CFG_TIME_DEBOUNCE_RELEASE_DYNAMIC || LWBTN_CFG_TIME_DEBOUNCE_RELEASE > 0
-            if ((mstime - btn->time_state_change) >= LWBTN_TIME_DEBOUNCE_RELEASE_GET_MIN(btn))
+            if ((lwbtn_time_t)(mstime - btn->time_state_change) >= LWBTN_TIME_DEBOUNCE_RELEASE_GET_MIN(btn))
 #endif /* LWBTN_CFG_TIME_DEBOUNCE_RELEASE_DYNAMIC || LWBTN_CFG_TIME_DEBOUNCE_RELEASE > 0 */
             {
                 /* Handle on-release event */
@@ -254,7 +269,7 @@ prv_process_btn(lwbtn_t* lwobj, lwbtn_btn_t* btn, lwbtn_time_t mstime) {
                     /*
                      * Increase consecutive clicks if max not reached yet
                      * and if time between two clicks is not long enough
-                     * 
+                     *
                      * Otherwise we consider click as fresh one
                      */
                     if (btn->click.cnt > 0 && btn->click.cnt < LWBTN_CLICK_MAX_CONSECUTIVE(btn)
@@ -266,7 +281,7 @@ prv_process_btn(lwbtn_t* lwobj, lwbtn_btn_t* btn, lwbtn_time_t mstime) {
                          *
                          * This can only happen, if onpress started earlier than max consecutive time,
                          * while onrelease happened later than maximum consecutive time.
-                         * 
+                         *
                          * In this case simply report previous state before setting new click.
                          */
                         if (btn->click.cnt > 0) {
@@ -286,14 +301,14 @@ prv_process_btn(lwbtn_t* lwobj, lwbtn_btn_t* btn, lwbtn_time_t mstime) {
                     /*
                      * There was an on-release event, but timing
                      * for click event detection is outside allowed window.
-                     * 
+                     *
                      * Reset clicks counter -> not valid sequence for click event.
                      */
                     btn->click.cnt = 0;
                 }
 
 #if LWBTN_CFG_CLICK_MAX_CONSECUTIVE_SEND_IMMEDIATELY
-                /* 
+                /*
                  * Depending on the configuration,
                  * this part will send on-click event immediately after release event,
                  * if maximum number of consecutive clicks has been reached.
@@ -309,10 +324,10 @@ prv_process_btn(lwbtn_t* lwobj, lwbtn_btn_t* btn, lwbtn_time_t mstime) {
             }
 #if LWBTN_CFG_USE_CLICK
         } else {
-            /* 
-             * Based on te configuration, this part of the code
+            /*
+             * Based on the configuration, this part of the code
              * will send on-click event after certain timeout.
-             * 
+             *
              * This feature is useful if user prefers multi-click feature
              * that is reported only after last click event happened,
              * including number of clicks made by user
@@ -354,6 +369,7 @@ lwbtn_init_ex(lwbtn_t* lwobj, lwbtn_btn_t* btns, uint16_t btns_cnt, lwbtn_get_st
     }
 
     LWBTN_MEMSET(lwobj, 0x00, sizeof(*lwobj));
+    LWBTN_MEMSET(btns, 0x00, sizeof(*btns) * btns_cnt);
     lwobj->btns = btns;
     lwobj->btns_cnt = btns_cnt;
     lwobj->evt_fn = evt_fn;
@@ -363,31 +379,34 @@ lwbtn_init_ex(lwbtn_t* lwobj, lwbtn_btn_t* btns, uint16_t btns_cnt, lwbtn_get_st
     (void)get_state_fn; /* May be unused */
 #endif /* LWBTN_CFG_GET_STATE_MODE != LWBTN_GET_STATE_MODE_MANUAL */
 
-    for (size_t i = 0; i < btns_cnt; ++i) {
+    for (size_t idx = 0; idx < btns_cnt; ++idx) {
+        lwbtn_btn_t* const btn = &btns[idx];
+
 #if LWBTN_CFG_TIME_DEBOUNCE_PRESS_DYNAMIC
-        btns[i].time_debounce = LWBTN_CFG_TIME_DEBOUNCE_PRESS;
+        btn->time_debounce = LWBTN_CFG_TIME_DEBOUNCE_PRESS;
 #endif /* LWBTN_CFG_TIME_DEBOUNCE_PRESS_DYNAMIC */
 #if LWBTN_CFG_TIME_DEBOUNCE_RELEASE_DYNAMIC
-        btns[i].time_debounce_release = LWBTN_CFG_TIME_DEBOUNCE_RELEASE;
+        btn->time_debounce_release = LWBTN_CFG_TIME_DEBOUNCE_RELEASE;
 #endif /* LWBTN_CFG_TIME_DEBOUNCE_RELEASE_DYNAMIC */
 #if LWBTN_CFG_TIME_KEEPALIVE_PERIOD_DYNAMIC
-        btns[i].time_keepalive_period = LWBTN_CFG_TIME_KEEPALIVE_PERIOD;
+        btn->time_keepalive_period = LWBTN_CFG_TIME_KEEPALIVE_PERIOD;
 #endif /* LWBTN_CFG_TIME_KEEPALIVE_PERIOD_DYNAMIC */
 
 #if LWBTN_CFG_USE_CLICK || __DOXYGEN__
 #if LWBTN_CFG_TIME_CLICK_MIN_DYNAMIC
-        btns[i].time_click_pressed_min = LWBTN_CFG_TIME_CLICK_MIN;
+        btn->time_click_pressed_min = LWBTN_CFG_TIME_CLICK_MIN;
 #endif /* LWBTN_CFG_TIME_CLICK_MIN_DYNAMIC */
 #if LWBTN_CFG_TIME_CLICK_MAX_DYNAMIC
-        btns[i].time_click_pressed_max = LWBTN_CFG_TIME_CLICK_MAX;
+        btn->time_click_pressed_max = LWBTN_CFG_TIME_CLICK_MAX;
 #endif /* LWBTN_CFG_TIME_CLICK_MAX_DYNAMIC */
 #if LWBTN_CFG_TIME_CLICK_MULTI_MAX_DYNAMIC
-        btns[i].time_click_multi_max = LWBTN_CFG_TIME_CLICK_MULTI_MAX;
+        btn->time_click_multi_max = LWBTN_CFG_TIME_CLICK_MULTI_MAX;
 #endif /* LWBTN_CFG_TIME_CLICK_MULTI_MAX_DYNAMIC */
 #if LWBTN_CFG_CLICK_MAX_CONSECUTIVE_DYNAMIC
-        btns[i].max_consecutive = LWBTN_CFG_CLICK_MAX_CONSECUTIVE;
+        btn->max_consecutive = LWBTN_CFG_CLICK_MAX_CONSECUTIVE;
 #endif /* LWBTN_CFG_CLICK_MAX_CONSECUTIVE_DYNAMIC */
 #endif /* LWBTN_CFG_USE_CLICK || __DOXYGEN__ */
+        prv_reset_btn(btn);
     }
 
     return 1;
@@ -395,9 +414,9 @@ lwbtn_init_ex(lwbtn_t* lwobj, lwbtn_btn_t* btns, uint16_t btns_cnt, lwbtn_get_st
 
 /**
  * \brief           Button processing function, that reads the inputs and makes actions accordingly.
- * 
+ *
  *                  It checks state of all the buttons, linked to the specific LwBTN instance (group).
- * 
+ *
  * \param[in]       lwobj: LwBTN instance. Set to `NULL` to use default one
  * \param[in]       mstime: Current system time in milliseconds
  * \return          `1` on success, `0` otherwise
@@ -415,11 +434,11 @@ lwbtn_process_ex(lwbtn_t* lwobj, lwbtn_time_t mstime) {
 
 /**
  * \brief           Process single button instance from the specific LwOBJ instance (group).
- * 
+ *
  *                  This feature can be used if application wants to process the button events only
- *                  when interrupt hits (as a trigger). It gives user higher autonomy to decide which 
+ *                  when interrupt hits (as a trigger). It gives user higher autonomy to decide which
  *                  and when it will call specific button processing.
- * 
+ *
  * \param[in]       lwobj: LwBTN instance. Set to `NULL` to use default one
  * \param[in]       btn: Button object. Must not be set to `NULL`
  * \param[in]       mstime: Current system time in milliseconds
@@ -457,10 +476,10 @@ lwbtn_set_btn_state(lwbtn_btn_t* btn, uint8_t state) {
 
 /**
  * \brief           Check if button is active.
- * 
+ *
  *                  Active is considered when initial debounce period has been a pass.
  *                  This is the period between on-press and on-release events.
- * 
+ *
  * \param[in]       btn: Button handle to check
  * \return          `1` if active, `0` otherwise
  */
@@ -471,25 +490,27 @@ lwbtn_is_btn_active(const lwbtn_btn_t* btn) {
 
 /**
  * \brief           Reset button[s] state to default
- * 
+ *
  *                  When reset is called, and if button is pressed (active),
  *                  no further events will be called up until we receive
  *                  the new valid press action.
- * 
+ *
  *                  A typical use case would be when application needs to react
  *                  on a long press (several keep alive events).
- *                  
+ *
  *                  Consider the use case where user runs the GUI and long press changes the screen.
- *                  The new screen has its own button handling method, which performs some other action (eg. "go home" action).
- *                  
+ *                  The new screen has its own button handling method, which performs some other action (eg. "go home"
+ * action).
+ *
  *                  Calling the reset function will prevent new screen to continue receiving the events
  *                  and forces the user to release the button and press it again.
- * 
+ *
  * \note            If button is reset during active time, there will be no further events
  *                  for this button sent to the application, up until a new valid on-press is detected
- * 
+ *
  * \param           lwobj: Object to reset buttons. Set to non-NULL to reset
- *                      all buttons in an object
+ *                      all buttons in an object, or set to `NULL` if you want to reset only
+ *                      a specific button object
  * \param           btn: Button object to reset. Optional parameter.
  *                      When non-NULL, button is reset
  * \return          `1` on success, `0` otherwise
@@ -497,10 +518,10 @@ lwbtn_is_btn_active(const lwbtn_btn_t* btn) {
 uint8_t
 lwbtn_reset(lwbtn_t* lwobj, lwbtn_btn_t* btn) {
     for (size_t idx = 0; idx < (lwobj != NULL ? lwobj->btns_cnt : 0); ++idx) {
-        lwobj->btns[idx].flags &= ~LWBTN_FLAG_FIRST_INACTIVE_RCVD;
+        prv_reset_btn(&lwobj->btns[idx]);
     }
     if (btn != NULL) {
-        btn->flags &= ~LWBTN_FLAG_FIRST_INACTIVE_RCVD;
+        prv_reset_btn(btn);
     }
     return 1;
 }
@@ -753,7 +774,8 @@ lwbtn_keepalive_get_period(const lwbtn_btn_t* btn) {
  *                  \ref LWBTN_CFG_TIME_KEEPALIVE_PERIOD_DYNAMIC are both enabled
  *
  * \param[in]       btn: Button instance to set keep alive period for
- * \param[in]       period: New keep alive period in `ms`
+ * \param[in]       period: New keep alive period in `ms`.
+ *                      Set to `0` to disable the keep alive for specific button
  * \return          `1` on success, `0` otherwise
  */
 uint8_t
@@ -769,7 +791,7 @@ lwbtn_keepalive_set_period(lwbtn_btn_t* btn, lwbtn_time_t period) {
  *                  It is set to `0` if btn isn't pressed.
  *
  *                  This function is useful in the application callback event function.
- * 
+ *
  * \note            Available only when \ref LWBTN_CFG_USE_KEEPALIVE feature is enabled
  *
  * \param[in]       btn: Button instance to get keep alive count for

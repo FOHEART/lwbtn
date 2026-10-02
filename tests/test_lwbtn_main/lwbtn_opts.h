@@ -4,7 +4,7 @@
  */
 
 /*
- * Copyright (c) 2024 Tilen MAJERLE
+ * Copyright (c) 2026 Tilen MAJERLE
  *
  * Permission is hereby granted, free of charge, to any person
  * obtaining a copy of this software and associated documentation
@@ -29,7 +29,7 @@
  * This file is part of LwBTN - Lightweight button manager.
  *
  * Author:          Tilen MAJERLE <tilen@majerle.eu>
- * Version:         v1.3.1
+ * Version:         v1.3.2
  */
 #ifndef LWBTN_HDR_OPTS_H
 #define LWBTN_HDR_OPTS_H

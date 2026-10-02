@@ -34,11 +34,11 @@
 #ifndef LWBTN_HDR_OPTS_H
 #define LWBTN_HDR_OPTS_H
 
-/* Rename this file to "lwbtn_opts.h" for your application */
+/* Disable debounce completely, to keep event timing simple and deterministic */
+#define LWBTN_CFG_TIME_DEBOUNCE_PRESS   0
+#define LWBTN_CFG_TIME_DEBOUNCE_RELEASE 0
 
-/*
- * Open "include/lwbtn/lwbtn_opt.h" and
- * copy & replace here settings you want to change values
- */
+/* Drive input state manually from the test, instead of through a get-state callback */
+#define LWBTN_CFG_GET_STATE_MODE        LWBTN_GET_STATE_MODE_MANUAL
 
 #endif /* LWBTN_HDR_OPTS_H */
